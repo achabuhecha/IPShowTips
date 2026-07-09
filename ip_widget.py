@@ -1,9 +1,10 @@
 import tkinter as tk
 from tkinter import Menu
-import requests
 import datetime
 import time
 import threading
+import json
+import urllib.request
 
 try:
     import pystray
@@ -63,13 +64,10 @@ class IPFloatMonitor:
         self.win_y_at_press = 0
         self.did_drag = False
         self.drag_threshold = 4
-        self._clock_second = None
         self._pending_ip_ok = None
         self._pending_ip_error = False
         self._tick_timer = None
         self.tray_icon = None
-        self.tray_ready = False
-        self.hidden_to_tray = False
         self.last_known_ip = None
         self.alert_window = None
 
@@ -122,15 +120,6 @@ class IPFloatMonitor:
             font=("微软雅黑", 9),
         )
         self.label_version.pack(pady=(2, 0))
-
-        self.label_time = tk.Label(
-            self.panel_main,
-            text="0000-00-00 00:00:00",
-            fg="#999",
-            bg="white",
-            font=("微软雅黑", 11),
-        )
-        # 暂不显示当前时间
 
         self._bind_leave(self.panel_main)
         for child in self.panel_main.winfo_children():
@@ -375,7 +364,6 @@ class IPFloatMonitor:
             return
 
         now = self._now_second()
-        self._clock_second = now
         self._flush_pending_ip(now)
 
         delay = 1000 - (datetime.datetime.now().microsecond // 1000)
@@ -388,10 +376,9 @@ class IPFloatMonitor:
         self._pending_ip_ok = (ip, location)
         self.root.after(0, self._sync_ip_with_clock)
 
-    def _queue_ip_error(self, error):
+    def _queue_ip_error(self):
         self._pending_ip_ok = None
         self._pending_ip_error = True
-        print("IP获取失败", error)
         self.root.after(0, self._sync_ip_with_clock)
 
     def _sync_ip_with_clock(self):
@@ -695,7 +682,6 @@ class IPFloatMonitor:
             menu,
         )
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
-        self.tray_ready = True
 
     def hide_to_tray(self):
         self.root.after(0, self._hide_to_tray_main)
@@ -703,7 +689,6 @@ class IPFloatMonitor:
     def _hide_to_tray_main(self):
         if not self.run_flag:
             return
-        self.hidden_to_tray = True
         if self.state != "dot" and self.state not in ("shrinking",):
             self.start_shrink()
         self.root.after(200, self._withdraw_window)
@@ -712,13 +697,9 @@ class IPFloatMonitor:
         if self.run_flag:
             self.root.withdraw()
 
-    def show_from_tray(self):
-        self.root.after(0, self._show_from_tray_main)
-
     def _show_from_tray_main(self):
         if not self.run_flag:
             return
-        self.hidden_to_tray = False
         self.root.deiconify()
         self.root.attributes("-topmost", True)
         self.root.lift()
@@ -749,21 +730,19 @@ class IPFloatMonitor:
 
     def _fetch_ip_background(self):
         try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-            res = requests.get(
+            req = urllib.request.Request(
                 "https://whois.pconline.com.cn/ipJson.jsp?json=true",
-                headers=headers,
-                timeout=3,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                },
             )
-            res.encoding = "gbk"
-            data = res.json()
+            with urllib.request.urlopen(req, timeout=3) as res:
+                data = json.loads(res.read().decode("gbk"))
             ip = data["ip"]
             location = data.get("addr", f"{data.get('pro', '')}{data.get('city', '')}")
             self.root.after(0, self._queue_ip_ok, ip, location)
-        except Exception as e:
-            self.root.after(0, self._queue_ip_error, e)
+        except Exception:
+            self.root.after(0, self._queue_ip_error)
 
 
 if __name__ == "__main__":

@@ -73,19 +73,20 @@ pip install -r requirements.txt
 pyinstaller --noconsole --onefile --name "IPShowTips" --hidden-import=pystray._win32 ip_widget.py
 ```
 
-打包完成后，可执行文件位于 `dist/IPShowTips.exe`。
+打包完成后，可执行文件位于 `dist/IPShowTips.exe`（约 19 MB，PyInstaller 单文件体积受 Python 运行时限制）。
 
 ## 项目结构
 
 ```
-ip-show-tips/
+IPShowTips/
 ├── ip_widget.py       # 主程序源码
 ├── dist/
 │   └── IPShowTips.exe # 可执行文件
-├── requirements.txt   # Python 依赖
+├── requirements.txt   # Python 依赖（pystray、Pillow、pyinstaller）
 ├── build.bat          # 一键打包脚本
 ├── README.md          # 项目说明（本文件）
-└── 使用说明.txt       # 简明使用手册
+├── 使用说明.txt       # 简明使用手册
+└── LICENSE            # MIT 开源协议
 ```
 
 ## 数据来源
