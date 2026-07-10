@@ -1,12 +1,27 @@
 # Python
-__pycache__/
-*.py[cod]
-*.pyo
+python/__pycache__/
+python/*.py[cod]
+python/*.pyo
+python/build/
+python/*.spec
+python/.venv/
+python/venv/
 
-# PyInstaller
+# AutoHotkey local compiler (copied by autohotkey/build.bat)
+autohotkey/tools/compiler/
+
+# Legacy root artifacts (pre folder split)
+tools/
+__pycache__/
 build/
 *.spec
+dist/
 
-# 虚拟环境
-.venv/
-venv/
+# Build logs
+*.log.err
+
+# Legacy / temp exe names
+autohotkey/dist/IPShowTips.exe
+autohotkey/dist/IPShowTips_new.exe
+autohotkey/dist/IPShowTips_fix.exe
+python/dist/IPShowTips.exe
