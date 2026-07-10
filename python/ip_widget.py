@@ -68,6 +68,7 @@ class IPFloatMonitor:
         self._pending_ip_error = False
         self._tick_timer = None
         self.tray_icon = None
+        self.in_tray = False
         self.last_known_ip = None
         self.alert_window = None
 
@@ -416,6 +417,16 @@ class IPFloatMonitor:
                 pass
             self.alert_window = None
 
+    def _alert_position(self, width, height):
+        dot_x = self.root.winfo_x()
+        dot_y = self.root.winfo_y()
+        dot_w, dot_h = self._window_size()
+        x = dot_x + dot_w - width
+        y = dot_y - height - 12
+        if y < self.margin_x:
+            y = dot_y + dot_h + 12
+        return self._clamp_position(x, y, width, height)
+
     def _show_ip_change_alert(self, old_ip, new_ip, location):
         self._close_ip_alert()
 
@@ -489,11 +500,7 @@ class IPFloatMonitor:
         alert.update_idletasks()
         width = max(300, shell.winfo_reqwidth() + 2)
         height = shell.winfo_reqheight() + 2
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
-        x = sw - width - self.margin_x
-        y = int(sh * (1 - self.margin_bottom_ratio) - height - self.dot_size - 12)
-        x, y = self._clamp_position(x, y, width, height)
+        x, y = self._alert_position(width, height)
         alert.geometry(f"{width}x{height}+{x}+{y}")
 
         self.alert_window = alert
@@ -665,23 +672,47 @@ class IPFloatMonitor:
         draw.text((size // 2, size // 2), "IP", fill="#E2E8F0", font=font, anchor="mm")
         return image
 
+    def _build_tray_menu(self):
+        items = []
+        if self.in_tray:
+            items.append(
+                pystray.MenuItem(
+                    "显示悬浮球",
+                    lambda: self.root.after(0, self._show_from_tray_main),
+                    default=True,
+                )
+            )
+        else:
+            items.append(
+                pystray.MenuItem(
+                    "最小化到托盘",
+                    lambda: self.root.after(0, self._hide_to_tray_main),
+                    default=True,
+                )
+            )
+        items.extend(
+            [
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem("退出", lambda: self.root.after(0, self.close_app)),
+            ]
+        )
+        return pystray.Menu(*items)
+
     def _setup_tray(self):
         if pystray is None:
             return
 
-        menu = pystray.Menu(
-            pystray.MenuItem("显示悬浮球", lambda: self.root.after(0, self._show_from_tray_main), default=True),
-            pystray.MenuItem("最小化到托盘", lambda: self.root.after(0, self._hide_to_tray_main)),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("退出", lambda: self.root.after(0, self.close_app)),
-        )
         self.tray_icon = pystray.Icon(
             APP_TITLE,
             self._create_tray_image(),
             f"{APP_TITLE} v{APP_VERSION}",
-            menu,
+            self._build_tray_menu(),
         )
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
+
+    def _refresh_tray_menu(self):
+        if self.tray_icon is not None:
+            self.tray_icon.menu = self._build_tray_menu()
 
     def hide_to_tray(self):
         self.root.after(0, self._hide_to_tray_main)
@@ -696,6 +727,8 @@ class IPFloatMonitor:
     def _withdraw_window(self):
         if self.run_flag:
             self.root.withdraw()
+            self.in_tray = True
+            self._refresh_tray_menu()
 
     def _show_from_tray_main(self):
         if not self.run_flag:
@@ -703,6 +736,8 @@ class IPFloatMonitor:
         self.root.deiconify()
         self.root.attributes("-topmost", True)
         self.root.lift()
+        self.in_tray = False
+        self._refresh_tray_menu()
 
     def show_menu(self, event):
         self.menu_right.post(event.x_root, event.y_root)

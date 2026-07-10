@@ -15,7 +15,7 @@ DOT_TEXT := "E2E8F0"
 DOT_SIZE := 36
 PANEL_W := 300
 PANEL_H := 120
-MARGIN_X := 8
+MARGIN_X := 16
 MARGIN_BOTTOM_RATIO := 0.30
 HIDE_DELAY := 120
 SNAP_THRESHOLD := 6
@@ -139,6 +139,7 @@ class IPFloatMonitor {
         this.animStart := 0
         this.inDotMode := false
         this.didDrag := false
+        this.inTray := false
         this.dotHbm := 0
         this.dotPicSize := DOT_SIZE
         this.dragPollFn := this.DragPoll.Bind(this)
@@ -158,12 +159,16 @@ class IPFloatMonitor {
     }
 
     Run() {
-        this.gui.Show()
+        ww := this.WindowWidth()
+        wh := this.WindowHeight()
+        this.ApplyGeometry(ww, wh)
+        this.gui.Show("x" this.posX " y" this.posY " w" ww " h" wh " NoActivate")
     }
 
     BuildGui() {
         this.gui := Gui("-Caption +AlwaysOnTop +ToolWindow +LastFound", APP_TITLE)
         this.gui.BackColor := TRANSPARENT
+        this.gui.OnEvent("ContextMenu", this.ShowContextMenu.Bind(this))
 
         this.dotHbm := CreateDotBitmap(DOT_SIZE)
         this.dotPic := this.gui.Add("Picture", "x0 y0 w" DOT_SIZE " h" DOT_SIZE, "HBITMAP:*" this.dotHbm)
@@ -206,12 +211,20 @@ class IPFloatMonitor {
         }
         DllCall("DeleteObject", "Ptr", hbm)
         A_IconTip := APP_TITLE " v" APP_VERSION
+        this.BuildTrayMenu()
+    }
+
+    BuildTrayMenu() {
         A_TrayMenu.Delete()
-        A_TrayMenu.Add("显示悬浮球", this.ShowFromTray.Bind(this))
-        A_TrayMenu.Add("最小化到托盘", this.HideToTray.Bind(this))
+        if this.inTray {
+            A_TrayMenu.Add("显示悬浮球", this.ShowFromTray.Bind(this))
+            A_TrayMenu.Default := "显示悬浮球"
+        } else {
+            A_TrayMenu.Add("最小化到托盘", this.HideToTray.Bind(this))
+            A_TrayMenu.Default := "最小化到托盘"
+        }
         A_TrayMenu.Add()
         A_TrayMenu.Add("退出", (*) => this.CloseApp())
-        A_TrayMenu.Default := "显示悬浮球"
         A_TrayMenu.ClickCount := 2
     }
 
@@ -223,14 +236,22 @@ class IPFloatMonitor {
     }
 
     RegisterMessages() {
-        OnMessage(0x0084, this.OnNcHitTest.Bind(this))   ; WM_NCHITTEST
+        OnMessage(0x0084, this.OnNcHitTest.Bind(this))     ; WM_NCHITTEST
         OnMessage(0x00A1, this.OnNcLButtonDown.Bind(this)) ; WM_NCLBUTTONDOWN
+        OnMessage(0x00A4, this.OnNcRButtonUp.Bind(this))   ; WM_NCRBUTTONUP
     }
 
     OnNcHitTest(wParam, lParam, msg, hwnd) {
         if !this.running || !this.IsOurHwnd(hwnd)
             return
         return 2  ; HTCAPTION：系统原生拖动，跟手不闪烁
+    }
+
+    OnNcRButtonUp(wParam, lParam, msg, hwnd) {
+        if !this.running || hwnd != this.gui.Hwnd
+            return
+        this.ShowContextMenu()
+        return 0
     }
 
     OnNcLButtonDown(wParam, lParam, msg, hwnd) {
@@ -362,7 +383,8 @@ class IPFloatMonitor {
     }
 
     ShowContextMenu(*) {
-        this.contextMenu.Show()
+        MouseGetPos(&mx, &my)
+        this.contextMenu.Show(mx, my)
     }
 
     ApplyRectRegion(w, h) {
@@ -669,6 +691,19 @@ class IPFloatMonitor {
         }
     }
 
+    AlertPosition(w, h) {
+        rect := this.GetWinRect()
+        dotX := rect[1]
+        dotY := rect[2]
+        dotW := this.WindowWidth()
+        dotH := this.WindowHeight()
+        x := dotX + dotW - w
+        y := dotY - h - 12
+        if (y < MARGIN_X)
+            y := dotY + dotH + 12
+        return this.ClampPosition(x, y, w, h)
+    }
+
     ShowIpChangeAlert(oldIp, newIp, loc) {
         this.CloseIpAlert()
         alert := Gui("-Caption +AlwaysOnTop +ToolWindow", "IP变化提醒")
@@ -683,13 +718,8 @@ class IPFloatMonitor {
         alert.Add("Text", "x16 y88 w268 BackgroundWhite", "归属地：" loc)
         btn := alert.Add("Button", "x200 y118 w80 h28", "知道了")
         btn.OnEvent("Click", (*) => this.CloseIpAlert())
-        sz := this.ScreenSize()
-        sw := sz[1]
-        sh := sz[2]
         w := 300, h := 160
-        x := sw - w - MARGIN_X
-        y := Round(sh * (1 - MARGIN_BOTTOM_RATIO) - h - DOT_SIZE - 12)
-        pos := this.ClampPosition(x, y, w, h)
+        pos := this.AlertPosition(w, h)
         x := pos[1]
         y := pos[2]
         alert.Show("w" w " h" h " x" x " y" y)
@@ -707,11 +737,15 @@ class IPFloatMonitor {
         if (this.state != "dot" && this.state != "shrinking")
             this.StartShrink()
         SetTimer(() => this.gui.Hide(), -200)
+        this.inTray := true
+        this.BuildTrayMenu()
     }
 
     ShowFromTray(*) {
         this.gui.Show("NoActivate")
         WinSetAlwaysOnTop(true, this.gui)
+        this.inTray := false
+        this.BuildTrayMenu()
     }
 
     CloseApp(*) {
