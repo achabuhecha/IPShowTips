@@ -4,9 +4,11 @@
 ; IP 悬浮窗 — AutoHotkey v2
 
 APP_TITLE := "IP悬浮窗"
-APP_VERSION := "1.0.0"
+APP_VERSION := "1.1.0"
 IP_API := "https://whois.pconline.com.cn/ipJson.jsp?json=true"
 USER_AGENT := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+RUN_REG_KEY := "HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
+RUN_REG_NAME := "IPShowTips"
 
 TRANSPARENT := "010101"
 ACCENT := "4F46E5"
@@ -223,6 +225,9 @@ class IPFloatMonitor {
             A_TrayMenu.Add("最小化到托盘", this.HideToTray.Bind(this))
             A_TrayMenu.Default := "最小化到托盘"
         }
+        A_TrayMenu.Add("开机自启动", this.ToggleAutoStart.Bind(this))
+        if this.IsAutoStartEnabled()
+            A_TrayMenu.Check("开机自启动")
         A_TrayMenu.Add()
         A_TrayMenu.Add("退出", (*) => this.CloseApp())
         A_TrayMenu.ClickCount := 2
@@ -231,8 +236,36 @@ class IPFloatMonitor {
     BuildMenus() {
         this.contextMenu := Menu()
         this.contextMenu.Add("最小化到托盘", this.HideToTray.Bind(this))
+        this.contextMenu.Add("开机自启动", this.ToggleAutoStart.Bind(this))
+        if this.IsAutoStartEnabled()
+            this.contextMenu.Check("开机自启动")
         this.contextMenu.Add()
         this.contextMenu.Add("退出程序", (*) => this.CloseApp())
+    }
+
+    GetLaunchCommand() {
+        if A_IsCompiled
+            return '"' A_ScriptFullPath '"'
+        return '"' A_AhkPath '" "' A_ScriptFullPath '"'
+    }
+
+    IsAutoStartEnabled() {
+        try {
+            val := RegRead(RUN_REG_KEY, RUN_REG_NAME)
+            return (val != "")
+        } catch {
+            return false
+        }
+    }
+
+    ToggleAutoStart(*) {
+        if this.IsAutoStartEnabled() {
+            try RegDelete(RUN_REG_KEY, RUN_REG_NAME)
+        } else {
+            RegWrite(this.GetLaunchCommand(), "REG_SZ", RUN_REG_KEY, RUN_REG_NAME)
+        }
+        this.BuildMenus()
+        this.BuildTrayMenu()
     }
 
     RegisterMessages() {

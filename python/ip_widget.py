@@ -4,7 +4,14 @@ import datetime
 import time
 import threading
 import json
+import os
+import sys
 import urllib.request
+
+try:
+    import winreg
+except ImportError:
+    winreg = None
 
 try:
     import pystray
@@ -14,7 +21,9 @@ except ImportError:
 
 TRANSPARENT = "#010101"
 APP_TITLE = "IP悬浮窗"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
+RUN_REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
+RUN_REG_NAME = "IPShowTips"
 
 
 class IPFloatMonitor:
@@ -132,8 +141,14 @@ class IPFloatMonitor:
         for child in self.panel_main.winfo_children():
             child.bind("<Button-1>", self.drag_start)
 
+        self.auto_start_var = tk.BooleanVar(value=self.is_auto_start_enabled())
         self.menu_right = Menu(root, tearoff=0)
         self.menu_right.add_command(label="最小化到托盘", command=self.hide_to_tray)
+        self.menu_right.add_checkbutton(
+            label="开机自启动",
+            variable=self.auto_start_var,
+            command=self._on_auto_start_menu,
+        )
         self.menu_right.add_separator()
         self.menu_right.add_command(label="退出程序", command=self.close_app)
         root.bind("<Button-3>", self.show_menu)
@@ -692,6 +707,11 @@ class IPFloatMonitor:
             )
         items.extend(
             [
+                pystray.MenuItem(
+                    "开机自启动",
+                    lambda: self.root.after(0, self.toggle_auto_start),
+                    checked=lambda _item: self.is_auto_start_enabled(),
+                ),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem("退出", lambda: self.root.after(0, self.close_app)),
             ]
@@ -713,6 +733,65 @@ class IPFloatMonitor:
     def _refresh_tray_menu(self):
         if self.tray_icon is not None:
             self.tray_icon.menu = self._build_tray_menu()
+
+    @staticmethod
+    def _get_launch_command():
+        if getattr(sys, "frozen", False):
+            return f'"{sys.executable}"'
+        script = os.path.abspath(__file__)
+        return f'"{sys.executable}" "{script}"'
+
+    def is_auto_start_enabled(self):
+        if winreg is None:
+            return False
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_REG_PATH) as key:
+                value, _ = winreg.QueryValueEx(key, RUN_REG_NAME)
+            return bool(value)
+        except OSError:
+            return False
+
+    def enable_auto_start(self):
+        if winreg is None:
+            return False
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, RUN_REG_PATH, 0, winreg.KEY_SET_VALUE
+            ) as key:
+                winreg.SetValueEx(
+                    key, RUN_REG_NAME, 0, winreg.REG_SZ, self._get_launch_command()
+                )
+            return True
+        except OSError:
+            return False
+
+    def disable_auto_start(self):
+        if winreg is None:
+            return False
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, RUN_REG_PATH, 0, winreg.KEY_SET_VALUE
+            ) as key:
+                winreg.DeleteValue(key, RUN_REG_NAME)
+            return True
+        except OSError:
+            return False
+
+    def toggle_auto_start(self):
+        if self.is_auto_start_enabled():
+            self.disable_auto_start()
+        else:
+            self.enable_auto_start()
+        self.auto_start_var.set(self.is_auto_start_enabled())
+        self._refresh_tray_menu()
+
+    def _on_auto_start_menu(self):
+        if self.auto_start_var.get():
+            ok = self.enable_auto_start()
+        else:
+            ok = self.disable_auto_start()
+        self.auto_start_var.set(self.is_auto_start_enabled() if ok else not self.auto_start_var.get())
+        self._refresh_tray_menu()
 
     def hide_to_tray(self):
         self.root.after(0, self._hide_to_tray_main)
